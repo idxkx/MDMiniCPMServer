@@ -28,8 +28,8 @@ model_service = ModelService(MODELS_DIR)
 
 # 可用模型枚举
 class AvailableModels(str, Enum):
-    MINICPM_V4_INT4 = "MiniCPM-V-4-int4"
-    MINICPM_V4_5_INT4 = "MiniCPM-V-4_5-int4"
+    MINICPM_V4_INT4 = "MiniCPM-V-4-int4"  # 注意：此模型可能有兼容性问题，推荐使用4.5版本
+    MINICPM_V4_5_INT4 = "MiniCPM-V-4_5-int4"  # 推荐版本
 
 # Pydantic models
 class AnalyzeRequest(BaseModel):
