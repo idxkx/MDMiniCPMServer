@@ -1,7 +1,8 @@
 import os
 import logging
+import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from PIL import Image
 import torch
 from transformers import AutoModel, AutoTokenizer
@@ -58,6 +59,9 @@ class ModelService:
                 trust_remote_code=True
             )
             
+            # 获取原始的HuggingFace repo名称
+            original_repo_name = f"openbmb/{model_name}"
+            
             # 加载模型
             self.current_model = AutoModel.from_pretrained(
                 str(model_path),
@@ -65,6 +69,10 @@ class ModelService:
                 device_map="auto" if self.device == "cuda" else None,
                 trust_remote_code=True
             )
+            
+            # 修复模型配置中的_name_or_path为原始repo名称，避免processor加载错误
+            if hasattr(self.current_model, 'config'):
+                self.current_model.config._name_or_path = original_repo_name
             
             if self.device == "cpu":
                 self.current_model = self.current_model.to(self.device)
@@ -110,11 +118,18 @@ class ModelService:
         
         logger.info("Model unloaded and memory cleared")
     
-    def analyze_image(self, image: Image.Image, prompt: str = "请详细描述这张图片的内容") -> Optional[str]:
-        """分析图片内容"""
+    def analyze_image(self, image: Image.Image, prompt: str = "请详细描述这张图片的内容") -> Tuple[Optional[str], float]:
+        """
+        分析图片内容
+        
+        Returns:
+            Tuple[Optional[str], float]: (分析结果, 处理时间秒数)
+        """
         if self.current_model is None or self.current_tokenizer is None:
             logger.error("No model loaded")
-            return None
+            return None, 0.0
+        
+        start_time = time.time()
         
         try:
             # 确保图片是RGB格式
@@ -127,6 +142,9 @@ class ModelService:
             logger.info("Starting image analysis...")
             logger.info(f"Message format: {[{'role': 'user', 'content': ['<image>', prompt]}]}")
             
+            # 记录推理开始时间
+            inference_start_time = time.time()
+            
             # 生成回复 - 结合官方格式和稳定参数
             res = self.current_model.chat(
                 msgs=msgs,
@@ -136,8 +154,12 @@ class ModelService:
                 enable_thinking=False  # 禁用长思维模式
             )
             
+            # 计算推理时间
+            inference_time = time.time() - inference_start_time
+            
             logger.info(f"Raw result type: {type(res)}")
             logger.info(f"Raw result: {res}")
+            logger.info(f"Inference time: {inference_time:.3f}s")
             
             # 确保返回字符串
             if isinstance(res, list):
@@ -148,15 +170,22 @@ class ModelService:
             # 清理特殊token
             result = result.replace('<CLS>', '').replace('</CLS>', '').strip()
             
+            # 计算总处理时间
+            total_time = time.time() - start_time
+            
             logger.info(f"Final result: {result}")
+            logger.info(f"Total processing time: {total_time:.3f}s")
             logger.info("Image analysis completed successfully")
-            return result
+            
+            return result, total_time
             
         except Exception as e:
+            total_time = time.time() - start_time
             logger.error(f"Failed to analyze image: {str(e)}")
+            logger.error(f"Processing time before error: {total_time:.3f}s")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            return None
+            return None, total_time
     
     def get_model_info(self) -> Dict[str, Any]:
         """获取当前模型信息"""

@@ -73,20 +73,19 @@ check_models() {
     # 检查可用模型 (支持符号链接)
     models_found=0
     for model in "MiniCPM-V-4-int4" "MiniCPM-V-4_5-int4"; do
-        if [ -e "models/$model" ]; then
-            # 检查是否为符号链接
-            if [ -L "models/$model" ]; then
-                # 检查符号链接的目标是否存在
-                if [ -e "models/$model" ]; then
-                    log_success "找到模型 (符号链接): $model"
-                    ((models_found++))
-                else
-                    log_warning "模型符号链接无效: $model"
-                fi
-            else
-                log_success "找到模型: $model"
+        if [ -L "models/$model" ]; then
+            # 是符号链接，检查链接目标路径
+            target=$(readlink "models/$model")
+            if [[ "$target" == *"huggingface/hub/models--openbmb--"* ]]; then
+                log_success "找到模型 (符号链接): $model -> $(basename "$target")"
                 ((models_found++))
+            else
+                log_warning "模型符号链接目标异常: $model -> $target"
             fi
+        elif [ -d "models/$model" ]; then
+            # 是普通目录
+            log_success "找到模型: $model"
+            ((models_found++))
         fi
     done
     

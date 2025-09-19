@@ -147,7 +147,7 @@ async def analyze_image_upload(
         image = Image.open(io.BytesIO(image_data)).convert('RGB')
         
         # 分析图片
-        result = model_service.analyze_image(image, prompt)
+        result, processing_time = model_service.analyze_image(image, prompt)
         if result is None:
             raise HTTPException(status_code=500, detail="图片分析失败")
         
@@ -156,7 +156,8 @@ async def analyze_image_upload(
             "result": result,
             "model_used": model_service.current_model_name,
             "prompt": prompt,
-            "filename": file.filename
+            "filename": file.filename,
+            "processing_time_seconds": round(processing_time, 3)
         }
         
     except HTTPException:
@@ -192,7 +193,7 @@ def analyze_image_url(request: AnalyzeRequest):
         image = Image.open(io.BytesIO(response.content)).convert('RGB')
         
         # 分析图片
-        result = model_service.analyze_image(image, request.prompt)
+        result, processing_time = model_service.analyze_image(image, request.prompt)
         if result is None:
             raise HTTPException(status_code=500, detail="图片分析失败")
         
@@ -201,7 +202,8 @@ def analyze_image_url(request: AnalyzeRequest):
             "result": result,
             "model_used": model_service.current_model_name,
             "prompt": request.prompt,
-            "image_url": request.image_url
+            "image_url": request.image_url,
+            "processing_time_seconds": round(processing_time, 3)
         }
         
     except HTTPException:
