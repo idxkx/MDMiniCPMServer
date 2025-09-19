@@ -49,25 +49,34 @@ class ModelService:
                 self.unload_model()
                 # 等待一下确保内存清理完成
                 import time
-                time.sleep(2)
+                time.sleep(1)  # 减少等待时间
             
             logger.info(f"Loading model from {model_path}")
             
-            # 加载tokenizer
+            # 加载tokenizer（缓存到磁盘以加快后续加载）
             self.current_tokenizer = AutoTokenizer.from_pretrained(
                 str(model_path),
-                trust_remote_code=True
+                trust_remote_code=True,
+                cache_dir=os.getenv("HF_HOME", "/tmp/hf_cache")
             )
             
             # 获取原始的HuggingFace repo名称
             original_repo_name = f"openbmb/{model_name}"
             
-            # 加载模型
+            # 优化数据类型选择
+            torch_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            if self.device == "cpu":
+                torch_dtype = torch.bfloat16  # CPU上使用bfloat16更高效
+            
+            # 加载模型并启用优化选项
             self.current_model = AutoModel.from_pretrained(
                 str(model_path),
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                torch_dtype=torch_dtype,
                 device_map="auto" if self.device == "cuda" else None,
-                trust_remote_code=True
+                trust_remote_code=True,
+                cache_dir=os.getenv("HF_HOME", "/tmp/hf_cache"),
+                low_cpu_mem_usage=True,  # 降低CPU内存使用
+                use_flash_attention_2=True if self.device == "cuda" else False  # CUDA启用FlashAttention
             )
             
             # 修复模型配置中的_name_or_path为原始repo名称，避免processor加载错误
@@ -78,6 +87,10 @@ class ModelService:
                 self.current_model = self.current_model.to(self.device)
             
             self.current_model.eval()
+            
+            # 模型预热 - 用小图片进行一次推理
+            self._warmup_model()
+            
             self.current_model_name = model_name
             
             logger.info(f"Successfully loaded model: {model_name}")
@@ -118,6 +131,31 @@ class ModelService:
         
         logger.info("Model unloaded and memory cleared")
     
+    def _warmup_model(self):
+        """模型预热 - 用小图片进行一次推理以优化后续性能"""
+        try:
+            logger.info("Warming up model...")
+            # 创建一个16x16的小图片用于预热
+            warmup_image = Image.new('RGB', (16, 16), color='white')
+            warmup_prompt = "test"
+            
+            msgs = [{'role': 'user', 'content': [warmup_image, warmup_prompt]}]
+            
+            # 执行预热推理（不记录结果）
+            with torch.no_grad():
+                self.current_model.chat(
+                    msgs=msgs,
+                    tokenizer=self.current_tokenizer,
+                    sampling=False,
+                    max_new_tokens=10,  # 极短的输出
+                    enable_thinking=False
+                )
+            
+            logger.info("Model warmup completed")
+            
+        except Exception as e:
+            logger.warning(f"Model warmup failed: {str(e)} - continuing anyway")
+    
     def analyze_image(self, image: Image.Image, prompt: str = "请详细描述这张图片的内容") -> Tuple[Optional[str], float]:
         """
         分析图片内容
@@ -132,9 +170,17 @@ class ModelService:
         start_time = time.time()
         
         try:
-            # 确保图片是RGB格式
+            # 图片预处理优化
             if image.mode != 'RGB':
                 image = image.convert('RGB')
+            
+            # 如果图片过大，进行适当缩放以提升推理速度
+            max_size = 1024  # 最大边长
+            if max(image.size) > max_size:
+                ratio = max_size / max(image.size)
+                new_size = tuple(int(dim * ratio) for dim in image.size)
+                image = image.resize(new_size, Image.Resampling.LANCZOS)
+                logger.info(f"Image resized to {new_size} for faster processing")
             
             # 构建消息格式 - 图片和文本放在同一个content数组中（符合MiniCPM-V规范）
             msgs = [{'role': 'user', 'content': [image, prompt]}]
@@ -145,14 +191,17 @@ class ModelService:
             # 记录推理开始时间
             inference_start_time = time.time()
             
-            # 生成回复 - 结合官方格式和稳定参数
-            res = self.current_model.chat(
-                msgs=msgs,
-                tokenizer=self.current_tokenizer,
-                sampling=False,  # 必须禁用采样避免CUDA错误
-                max_new_tokens=1024,
-                enable_thinking=False  # 禁用长思维模式
-            )
+            # 生成回复 - 优化推理参数以提升速度
+            with torch.no_grad():  # 确保不计算梯度以节省内存
+                res = self.current_model.chat(
+                    msgs=msgs,
+                    tokenizer=self.current_tokenizer,
+                    sampling=False,  # 必须禁用采样避免CUDA错误
+                    max_new_tokens=512,  # 减少最大token数以提升速度
+                    temperature=0.7,  # 稍微降低温度提升一致性
+                    do_sample=False,  # 禁用采样
+                    enable_thinking=False  # 禁用长思维模式
+                )
             
             # 计算推理时间
             inference_time = time.time() - inference_start_time
@@ -176,6 +225,11 @@ class ModelService:
             logger.info(f"Final result: {result}")
             logger.info(f"Total processing time: {total_time:.3f}s")
             logger.info("Image analysis completed successfully")
+            
+            # 推理后立即清理临时内存
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
             
             return result, total_time
             

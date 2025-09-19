@@ -13,10 +13,20 @@ services:
       - SERVER_PORT=8207
       - MODEL_PATH=/app/models
       - CUDA_VISIBLE_DEVICES=0
+      # 性能优化环境变量
+      - HF_HOME=/app/cache/huggingface
+      - TRANSFORMERS_CACHE=/app/cache/huggingface
+      - TORCH_HOME=/app/cache/torch
+      - TOKENIZERS_PARALLELISM=false
+      # PyTorch性能优化
+      - OMP_NUM_THREADS=4
+      - MKL_NUM_THREADS=4
+      - CUDA_LAUNCH_BLOCKING=0
     volumes:
       - ../models:/app/models
       - ../.env:/app/.env:ro
-      - ~/.cache/huggingface:/root/.cache/huggingface:ro
+      - ~/.cache/huggingface:/app/cache/huggingface:rw
+      - cache_volume:/app/cache/torch
     restart: unless-stopped
     deploy:
       resources:
@@ -31,3 +41,6 @@ services:
       timeout: 10s
       start_period: 60s
       retries: 3
+
+volumes:
+  cache_volume:
