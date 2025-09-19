@@ -1,0 +1,23 @@
+# Fresh minimal compose
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: minicpm-v-server:latest
+    container_name: minicpm-v-server
+    ports:
+      - "${HOST_PORT:-8207}:8207"
+    environment:
+      - PYTHONPATH=/app/src
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8207
+    volumes:
+      - ../models:/app/models:ro
+      - ../.env:/app/.env:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8207/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
