@@ -41,8 +41,17 @@ curl -s http://127.0.0.1:8207/models | jq .
 
 **Docker 开发：**
 ```bash
-# 构建并启动
+# 一键部署（推荐）
+./bin/deploy.sh
+
+# 手动构建并启动
 docker compose -f docker/docker-compose.yml up -d --build
+
+# 生产环境部署
+docker compose -f docker/docker-compose.prod.yml up -d --build
+
+# 生产环境 + Nginx
+docker compose -f docker/docker-compose.prod.yml --profile with-nginx up -d --build
 
 # 检查状态
 docker compose -f docker/docker-compose.yml ps
@@ -55,9 +64,13 @@ curl -f http://localhost:8207/health
 
 # 停止并清理
 docker compose -f docker/docker-compose.yml down
+```
 
-# 从零重新构建
-docker compose -f docker/docker-compose.yml build --no-cache
+**测试：**
+```bash
+# 运行测试脚本
+python tests/test_model_load.py
+python tests/test_upload.py
 ```
 
 ## 模型信息

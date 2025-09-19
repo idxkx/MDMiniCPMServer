@@ -1,6 +1,5 @@
-# Fresh minimal compose
 services:
-  app:
+  minicpm-v-server:
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -12,12 +11,23 @@ services:
       - PYTHONPATH=/app/src
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8207
+      - MODEL_PATH=/app/models
+      - CUDA_VISIBLE_DEVICES=0
     volumes:
-      - ../models:/app/models:ro
+      - ../models:/app/models
       - ../.env:/app/.env:ro
+      - ~/.cache/huggingface:/root/.cache/huggingface:ro
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8207/health"]
-      interval: 20s
-      timeout: 5s
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
       retries: 3

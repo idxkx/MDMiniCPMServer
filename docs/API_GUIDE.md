@@ -39,6 +39,13 @@ curl -X POST http://10.10.6.197:8207/load-model \
 - `MiniCPM-V-4-int4`: 基础版本，较快推理速度
 - `MiniCPM-V-4_5-int4`: 增强版本，更好的图片理解能力 (推荐)
 
+### 3.1 卸载模型 (可选)
+```bash
+POST /unload-model
+curl -X POST http://10.10.6.197:8207/unload-model
+```
+用于释放GPU内存，为加载其他模型做准备。
+
 ### 4. 图片分析 - 文件上传
 ```bash
 POST /analyze
@@ -68,9 +75,16 @@ curl -X POST http://10.10.6.197:8207/analyze-url \
 1. 加载模型: `POST /load-model`
 2. 分析图片: `POST /analyze` 或 `POST /analyze-url`
 
-### 切换模型
-1. 加载新模型: `POST /load-model` (会自动卸载旧模型)
+### 切换模型（推荐方式）
+**方式一：自动切换（适用于大部分情况）**
+1. 直接加载新模型: `POST /load-model` (会自动卸载旧模型)
 2. 继续分析: `POST /analyze` 或 `POST /analyze-url`
+
+**方式二：手动管理（推荐用于大模型切换）**
+1. 手动卸载当前模型: `POST /unload-model`
+2. 等待2-3秒让GPU内存完全释放
+3. 加载新模型: `POST /load-model`
+4. 继续分析: `POST /analyze` 或 `POST /analyze-url`
 
 ### 检查状态
 随时调用 `GET /models` 查看当前模型状态

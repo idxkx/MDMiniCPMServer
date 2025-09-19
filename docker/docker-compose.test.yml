@@ -1,0 +1,24 @@
+services:
+  minicpm-v-server-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: minicpm-v-server:test
+    container_name: minicpm-v-server-test
+    ports:
+      - "8209:8207"
+    environment:
+      - PYTHONPATH=/app/src
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8207
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      - ../models:/app/models:ro
+      - ../.env:/app/.env:ro
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8207/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3

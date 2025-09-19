@@ -44,7 +44,11 @@ class ModelService:
         try:
             # 清理之前的模型
             if self.current_model is not None:
+                logger.info(f"Unloading current model: {self.current_model_name}")
                 self.unload_model()
+                # 等待一下确保内存清理完成
+                import time
+                time.sleep(2)
             
             logger.info(f"Loading model from {model_path}")
             
@@ -78,7 +82,14 @@ class ModelService:
     
     def unload_model(self):
         """卸载当前模型"""
+        logger.info("Starting model unload...")
+        
         if self.current_model is not None:
+            # 将模型移到CPU以释放GPU内存
+            try:
+                self.current_model = self.current_model.cpu()
+            except:
+                pass
             del self.current_model
             self.current_model = None
         
@@ -88,12 +99,16 @@ class ModelService:
         
         self.current_model_name = None
         
-        # 清理GPU内存
+        # 强制清理GPU内存
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            torch.cuda.synchronize()  # 确保所有CUDA操作完成
         
-        gc.collect()
-        logger.info("Model unloaded")
+        # 多次垃圾回收确保彻底清理
+        for _ in range(3):
+            gc.collect()
+        
+        logger.info("Model unloaded and memory cleared")
     
     def analyze_image(self, image: Image.Image, prompt: str = "请详细描述这张图片的内容") -> Optional[str]:
         """分析图片内容"""
@@ -106,23 +121,36 @@ class ModelService:
             if image.mode != 'RGB':
                 image = image.convert('RGB')
             
-            # 构建消息格式 - 根据MiniCPM-V官方示例
+            # 构建消息格式 - 图片和文本放在同一个content数组中（符合MiniCPM-V规范）
             msgs = [{'role': 'user', 'content': [image, prompt]}]
             
             logger.info("Starting image analysis...")
+            logger.info(f"Message format: {[{'role': 'user', 'content': ['<image>', prompt]}]}")
             
-            # 生成回复 - 回退到稳定的greedy decoding但增加最小输出
+            # 生成回复 - 结合官方格式和稳定参数
             res = self.current_model.chat(
-                image=None,  # 图片已在消息中
                 msgs=msgs,
                 tokenizer=self.current_tokenizer,
-                sampling=False,  # 使用greedy decoding避免CUDA问题
+                sampling=False,  # 必须禁用采样避免CUDA错误
                 max_new_tokens=1024,
-                min_new_tokens=10  # 确保最小输出长度
+                enable_thinking=False  # 禁用长思维模式
             )
             
+            logger.info(f"Raw result type: {type(res)}")
+            logger.info(f"Raw result: {res}")
+            
+            # 确保返回字符串
+            if isinstance(res, list):
+                result = res[0] if res else ""
+            else:
+                result = str(res)
+            
+            # 清理特殊token
+            result = result.replace('<CLS>', '').replace('</CLS>', '').strip()
+            
+            logger.info(f"Final result: {result}")
             logger.info("Image analysis completed successfully")
-            return res
+            return result
             
         except Exception as e:
             logger.error(f"Failed to analyze image: {str(e)}")

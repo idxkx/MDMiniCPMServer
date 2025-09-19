@@ -105,6 +105,24 @@ def load_model(request: LoadModelRequest):
         logger.error(f"Error loading model: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/unload-model")
+def unload_model():
+    """
+    卸载当前模型
+    
+    释放GPU内存，为加载其他模型做准备。
+    """
+    try:
+        if model_service.current_model is None:
+            return {"status": "success", "message": "No model currently loaded"}
+        
+        current_model_name = model_service.current_model_name
+        model_service.unload_model()
+        return {"status": "success", "message": f"Model {current_model_name} unloaded successfully"}
+    except Exception as e:
+        logger.error(f"Error unloading model: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/analyze")
 async def analyze_image_upload(
     file: UploadFile = File(..., description="要分析的图片文件"),

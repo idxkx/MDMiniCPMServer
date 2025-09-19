@@ -1,0 +1,56 @@
+services:
+  minicpm-v-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.prod
+    image: minicpm-v-server:latest
+    container_name: minicpm-v-server-prod
+    ports:
+      - "${HOST_PORT:-8207}:8207"
+    environment:
+      - PYTHONPATH=/app/src
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8207
+      - CUDA_VISIBLE_DEVICES=0
+      - LOG_LEVEL=INFO
+    volumes:
+      - ../models:/app/models:ro
+      - ../logs:/app/logs
+      - ../.env:/app/.env:ro
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 16G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8207/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # 可选：Nginx反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: minicpm-v-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - minicpm-v-server
+    restart: unless-stopped
+    profiles:
+      - with-nginx
